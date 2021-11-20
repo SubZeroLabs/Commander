@@ -1,9 +1,8 @@
-use minecraft_data_types::encoder::{Encodable, Decodable, AsyncEncodable};
-use minecraft_data_types::nums::VarInt;
 use minecraft_data_types::common::Identifier;
-use anyhow::Context;
+use minecraft_data_types::encoder::{AsyncEncodable, Decodable, Encodable};
+use minecraft_data_types::nums::VarInt;
 use minecraft_data_types::strings::McString;
-use std::io::{Write, Read};
+use std::io::{Read, Write};
 use tokio::io::AsyncWrite;
 
 macro_rules! bit_map {
@@ -19,6 +18,22 @@ macro_rules! bit_map {
             )*
         }
 
+        impl $map_name {
+            pub fn new($($option_name: bool,)*) -> Self {
+                Self { $($option_name,)* }
+            }
+        }
+
+        impl From<u8> for $map_name {
+            fn from(byte: u8) -> Self {
+                Self {
+                    $(
+                        $option_name: byte & $bit_field != 0x0,
+                    )+
+                }
+            }
+        }
+
         impl Encodable for $map_name {
             fn encode<W: std::io::Write>(&self, writer: &mut W) -> anyhow::Result<()> {
                 let mut byte = 0x0;
@@ -27,7 +42,7 @@ macro_rules! bit_map {
                         byte |= $bit_field;
                     }
                 )+
-                writer.write_all(&[byte]).context("Failed to write bit byte into writer.")
+                byte.encode(writer)
             }
 
             fn size(&self) -> anyhow::Result<VarInt> {
@@ -38,11 +53,20 @@ macro_rules! bit_map {
         impl Decodable for $map_name {
             fn decode<R: std::io::Read>(reader: &mut R) -> anyhow::Result<Self> {
                 let byte = u8::decode(reader)?;
-                Ok(Self {
-                    $(
-                        $option_name: byte & $bit_field != 0x0,
-                    )+
-                })
+                Ok(<$map_name>::from(byte))
+            }
+        }
+
+        #[async_trait::async_trait]
+        impl AsyncEncodable for $map_name {
+            async fn async_encode<W: AsyncWrite + Send + Unpin>(&self, writer: &mut W) -> anyhow::Result<()> {
+                let mut byte = 0x0;
+                $(
+                    if self.$option_name {
+                        byte |= $bit_field;
+                    }
+                )+
+                byte.async_encode(writer).await
             }
         }
     )*}
@@ -60,6 +84,7 @@ macro_rules! parser {
             )+
         )?;
     )+) => {
+        #[derive(Debug)]
         pub enum Parser {
             $(
                 $enum_identifier$(
@@ -125,6 +150,35 @@ macro_rules! parser {
             }
         }
 
+        #[async_trait::async_trait]
+        impl AsyncEncodable for Parser {
+            async fn async_encode<W: AsyncWrite + Send + Unpin>(&self, writer: &mut W) -> anyhow::Result<()> {
+                match self {
+                    $(
+                        Parser::$enum_identifier
+                        $({ bits, $(
+                            $bit_property_ident,
+                        )+})?
+                        $({$(
+                            $property_ident,
+                        )+})? => {
+                            Identifier::from($identifier).async_encode(writer).await?;
+                            $(
+                                bits.async_encode(writer).await?;
+                                $(
+                                    $bit_property_ident.async_encode(writer).await?;
+                                )+
+                            )?
+                            $($(
+                                $property_ident.async_encode(writer).await?;
+                            )+)?
+                            Ok(())
+                        }
+                    )+
+                }
+            }
+        }
+
         impl Decodable for Parser {
             fn decode<R: std::io::Read>(reader: &mut R) -> anyhow::Result<Self> {
                 let ident = Identifier::decode(reader)?;
@@ -167,7 +221,7 @@ bit_map! {
         node_argument from 0x02;
         executable from 0x04;
         has_redirect from 0x08;
-        had_suggestions_type from 0x10;
+        has_suggestions_type from 0x10;
     }
 
     MinMax {
@@ -266,6 +320,7 @@ parser! {
 
 minecraft_data_types::auto_string!(NodeName, 32767);
 
+#[derive(Debug)]
 pub struct Node {
     flags: BrigadierFlags,
     children: (VarInt, Vec<VarInt>),
@@ -275,34 +330,168 @@ pub struct Node {
     suggestions_type: Option<SuggestionsType>,
 }
 
+impl Node {
+    pub fn new(
+        flags: BrigadierFlags,
+        children: (VarInt, Vec<VarInt>),
+        redirect_node: Option<VarInt>,
+        name: Option<NodeName>,
+        parser: Option<Parser>,
+        suggestions_type: Option<SuggestionsType>,
+    ) -> Self {
+        Self {
+            flags,
+            children,
+            redirect_node,
+            name,
+            parser,
+            suggestions_type,
+        }
+    }
+}
+
 impl Encodable for Node {
     fn encode<W: Write>(&self, writer: &mut W) -> anyhow::Result<()> {
-
+        self.flags.encode(writer)?;
+        self.children.encode(writer)?;
+        if self.flags.has_redirect {
+            self.redirect_node
+                .as_ref()
+                .expect("Redirect node should be provided if the flags are set as such.")
+                .encode(writer)?;
+        };
+        if !self.flags.is_root() {
+            self.name
+                .as_ref()
+                .expect("Name should be provided.")
+                .encode(writer)?;
+        };
+        if self.flags.is_argument() {
+            self.parser
+                .as_ref()
+                .expect("Parser should be provided.")
+                .encode(writer)?;
+        };
+        if self.flags.has_suggestions_type {
+            self.suggestions_type
+                .as_ref()
+                .expect("Suggestions type should be provided")
+                .encode(writer)?;
+        };
+        Ok(())
     }
 
     fn size(&self) -> anyhow::Result<VarInt> {
-        todo!()
+        let mut size = VarInt::from(0);
+        size += self.flags.size()?;
+        size += self.children.size()?;
+        if self.flags.has_redirect {
+            size += self
+                .redirect_node
+                .as_ref()
+                .expect("Redirect node should be provided if the flags are set as such.")
+                .size()?;
+        };
+        if !self.flags.is_root() {
+            size += self
+                .name
+                .as_ref()
+                .expect("Name should be provided.")
+                .size()?;
+        };
+        if self.flags.is_argument() {
+            size += self
+                .parser
+                .as_ref()
+                .expect("Parser should be provided.")
+                .size()?;
+        };
+        if self.flags.has_suggestions_type {
+            size += self
+                .suggestions_type
+                .as_ref()
+                .expect("Suggestions type should be provided")
+                .size()?;
+        };
+        Ok(size)
     }
 }
 
 #[async_trait::async_trait]
 impl AsyncEncodable for Node {
-    async fn async_encode<W: AsyncWrite + Send + Unpin>(&self, writer: &mut W) -> anyhow::Result<()> {
-        todo!()
+    async fn async_encode<W: AsyncWrite + Send + Unpin>(
+        &self,
+        writer: &mut W,
+    ) -> anyhow::Result<()> {
+        self.flags.async_encode(writer).await?;
+        self.children.async_encode(writer).await?;
+        if self.flags.has_redirect {
+            self.redirect_node
+                .as_ref()
+                .expect("Redirect node should be provided if the flags are set as such.")
+                .async_encode(writer)
+                .await?;
+        };
+        if !self.flags.is_root() {
+            self.name
+                .as_ref()
+                .expect("Name should be provided.")
+                .async_encode(writer)
+                .await?;
+        };
+        if self.flags.is_argument() {
+            self.parser
+                .as_ref()
+                .expect("Parser should be provided.")
+                .async_encode(writer)
+                .await?;
+        };
+        if self.flags.has_suggestions_type {
+            self.suggestions_type
+                .as_ref()
+                .expect("Suggestions type should be provided")
+                .async_encode(writer)
+                .await?;
+        };
+        Ok(())
     }
 }
 
 impl Decodable for Node {
     fn decode<R: Read>(reader: &mut R) -> anyhow::Result<Self> {
-        todo!()
+        let flags = BrigadierFlags::decode(reader)?;
+        Ok(Self {
+            flags,
+            children: <(VarInt, Vec<VarInt>)>::decode(reader)?,
+            redirect_node: if flags.has_redirect {
+                <Option<VarInt>>::decode(reader)?
+            } else {
+                None
+            },
+            name: if !flags.is_root() {
+                <Option<NodeName>>::decode(reader)?
+            } else {
+                None
+            },
+            parser: if flags.is_argument() {
+                <Option<Parser>>::decode(reader)?
+            } else {
+                None
+            },
+            suggestions_type: if flags.has_suggestions_type {
+                <Option<SuggestionsType>>::decode(reader)?
+            } else {
+                None
+            },
+        })
     }
 }
 
 #[cfg(test)]
 mod test {
     use crate::protocol::{BrigadierFlags, Parser};
+    use minecraft_data_types::encoder::{Decodable, Encodable};
     use std::io::{Cursor, Seek};
-    use minecraft_data_types::encoder::{Encodable, Decodable};
 
     #[test]
     pub fn test_bit_persistence() {
@@ -311,11 +500,16 @@ mod test {
             node_argument: true,
             executable: true,
             has_redirect: true,
-            had_suggestions_type: false,
+            has_suggestions_type: false,
         };
         let mut encoder = Cursor::new(Vec::new());
-        flags.encode(&mut encoder).expect("Should encode into cursor.");
+        flags
+            .encode(&mut encoder)
+            .expect("Should encode into cursor.");
         encoder.rewind().expect("Cursor should rewind.");
-        assert_eq!(flags, BrigadierFlags::decode(&mut encoder).expect("Brigadier flags should decode."));
+        assert_eq!(
+            flags,
+            BrigadierFlags::decode(&mut encoder).expect("Brigadier flags should decode.")
+        );
     }
 }
