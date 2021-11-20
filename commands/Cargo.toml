@@ -11,3 +11,4 @@ mc_packet_protocol = { version = "0.1.0", git = "https://github.com/SubZeroLabs/
 async-trait = "0.1.51"
 tokio = { version = "1", features = ["io-util"] }
 anyhow = "1.0.45"
+log = "0.4.14"

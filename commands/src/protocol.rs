@@ -1,8 +1,10 @@
-use minecraft_data_types::encoder::{Encodable, Decodable};
+use minecraft_data_types::encoder::{Encodable, Decodable, AsyncEncodable};
 use minecraft_data_types::nums::VarInt;
 use minecraft_data_types::common::Identifier;
 use anyhow::Context;
 use minecraft_data_types::strings::McString;
+use std::io::{Write, Read};
+use tokio::io::AsyncWrite;
 
 macro_rules! bit_map {
     ($($map_name:ident {
@@ -273,9 +275,32 @@ pub struct Node {
     suggestions_type: Option<SuggestionsType>,
 }
 
+impl Encodable for Node {
+    fn encode<W: Write>(&self, writer: &mut W) -> anyhow::Result<()> {
+
+    }
+
+    fn size(&self) -> anyhow::Result<VarInt> {
+        todo!()
+    }
+}
+
+#[async_trait::async_trait]
+impl AsyncEncodable for Node {
+    async fn async_encode<W: AsyncWrite + Send + Unpin>(&self, writer: &mut W) -> anyhow::Result<()> {
+        todo!()
+    }
+}
+
+impl Decodable for Node {
+    fn decode<R: Read>(reader: &mut R) -> anyhow::Result<Self> {
+        todo!()
+    }
+}
+
 #[cfg(test)]
 mod test {
-    use crate::types::{BrigadierFlags, Parser};
+    use crate::protocol::{BrigadierFlags, Parser};
     use std::io::{Cursor, Seek};
     use minecraft_data_types::encoder::{Encodable, Decodable};
 
