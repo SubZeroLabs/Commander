@@ -1,4 +1,4 @@
-pub mod executor;
+#![feature(stmt_expr_attributes)]
+
 pub mod protocol;
-#[macro_use]
-pub mod macros;
+pub mod executor;

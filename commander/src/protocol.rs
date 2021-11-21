@@ -36,7 +36,7 @@ macro_rules! bit_map {
 
         impl Encodable for $map_name {
             fn encode<W: std::io::Write>(&self, writer: &mut W) -> anyhow::Result<()> {
-                let mut byte = 0x0;
+                let mut byte = 0x0u8;
                 $(
                     if self.$option_name {
                         byte |= $bit_field;
@@ -489,7 +489,7 @@ impl Decodable for Node {
 
 #[cfg(test)]
 mod test {
-    use crate::protocol::{BrigadierFlags, Parser};
+    use crate::protocol::BrigadierFlags;
     use minecraft_data_types::encoder::{Decodable, Encodable};
     use std::io::{Cursor, Seek};
 
