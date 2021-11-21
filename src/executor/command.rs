@@ -120,7 +120,6 @@ impl<T> super::CommandChildContainer<T> for Command<T> {
     }
 }
 
-#[derive(Default)]
 pub struct NaturalCommand<T> {
     command_function: Option<CommandFunction<T>>,
     next: Box<Next<T>>,
@@ -129,6 +128,12 @@ pub struct NaturalCommand<T> {
 impl<T> NaturalCommand<T> {
     pub fn executable(command_function: CommandFunction<T>) -> Self {
         Self { command_function: Some(command_function), next: Box::new(Next::default()) }
+    }
+}
+
+impl<T> Default for NaturalCommand<T> {
+    fn default() -> Self {
+        Self { command_function: None, next: Box::new(Next::default()) }
     }
 }
 
