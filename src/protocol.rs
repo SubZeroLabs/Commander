@@ -5,6 +5,70 @@ use minecraft_data_types::strings::McString;
 use std::io::{Read, Write};
 use tokio::io::AsyncWrite;
 
+macro_rules! strict_enum {
+    ($($enum_name:ident; $index_type:ty { $($byte_representation:literal => $option_name:ident;)* })*) => {
+        $(
+            #[derive(Debug)]
+            pub enum $enum_name {
+                $($option_name,)*
+            }
+
+            impl minecraft_data_types::encoder::Decodable for $enum_name {
+                fn decode<R: std::io::Read>(reader: &mut R) -> anyhow::Result<Self> {
+                    let index = <$index_type>::decode(reader)?;
+                    match &*index {
+                        $(
+                            $byte_representation => Ok($enum_name::$option_name),
+                        )*
+                        _ => anyhow::bail!("Failed to decode index {} for {}.", index, stringify!($enum_name)),
+                    }
+                }
+            }
+
+            impl minecraft_data_types::encoder::Encodable for $enum_name {
+                fn encode<W: std::io::Write>(&self, writer: &mut W) -> anyhow::Result<()> {
+                    match self {
+                        $(
+                            $enum_name::$option_name => {
+                                <$index_type>::encode(&<$index_type>::from($byte_representation), writer)?;
+                                Ok(())
+                            }
+                        )*
+                    }
+                }
+
+                fn size(&self) -> anyhow::Result<minecraft_data_types::nums::VarInt> {
+                    match self {
+                        $(
+                            $enum_name::$option_name => {
+                                let size = <$index_type>::size(&<$index_type>::from($byte_representation))?;
+                                Ok(size)
+                            }
+                        )*
+                    }
+                }
+            }
+
+            #[async_trait::async_trait]
+            impl minecraft_data_types::encoder::AsyncEncodable for $enum_name {
+                async fn async_encode<W: tokio::io::AsyncWrite + Send + Unpin>(
+                    &self,
+                    writer: &mut W,
+                ) -> anyhow::Result<()> {
+                    match self {
+                        $(
+                            $enum_name::$option_name => {
+                                <$index_type>::async_encode(&<$index_type>::from($byte_representation), writer).await?;
+                                Ok(())
+                            }
+                        )*
+                    }
+                }
+            }
+        )*
+    };
+}
+
 macro_rules! bit_map {
     ($($map_name:ident {
         $(
@@ -239,7 +303,7 @@ bit_map! {
     }
 }
 
-mc_packet_protocol::strict_enum! {
+strict_enum! {
     StringDescription; minecraft_data_types::nums::VarInt {
         0 => SingleWord;
         1 => QuotablePhrase;
