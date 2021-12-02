@@ -139,7 +139,7 @@ macro_rules! executor {
                 )*
 
                 $(
-                    $crate::executor::CommandChildContainer::child(&mut $target, stringify!($name).into(), $name)?;
+                    $crate::executor::CommandChildContainer::child::<&str>(&mut $target, stringify!($name), $name)?;
                 )*
 
                 $executor_ident

@@ -77,16 +77,16 @@ impl<T> Command<T> {
 }
 
 impl<T> super::CommandChildContainer<T> for Command<T> {
-    fn child(&mut self, identifier: String, command: Command<T>) -> anyhow::Result<()> {
+    fn child<S: Into<String>>(&mut self, identifier: S, command: Command<T>) -> anyhow::Result<()> {
         match self {
             Command::Natural(inner) => {
-                if let Some(new_next) = Command::__child(inner.next.borrow_mut(), identifier, command)? {
+                if let Some(new_next) = Command::__child(inner.next.borrow_mut(), identifier.into(), command)? {
                     inner.next = new_next;
                 }
                 Ok(())
             }
             Command::ArgParser(inner) => {
-                if let Some(new_next) = Command::__child(inner.next.borrow_mut(), identifier, command)? {
+                if let Some(new_next) = Command::__child(inner.next.borrow_mut(), identifier.into(), command)? {
                     inner.next = new_next;
                 }
                 Ok(())

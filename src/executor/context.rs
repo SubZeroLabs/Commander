@@ -15,14 +15,14 @@ macro_rules! unwrap_value {
 
 pub type ArgValue = (String, Value);
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct ArgValues {
     values: Vec<ArgValue>,
 }
 
 impl ArgValues {
     pub fn new() -> Self {
-        Self { values: Vec::new() }
+        Self::default()
     }
 
     pub fn into_inner(self) -> Vec<ArgValue> {

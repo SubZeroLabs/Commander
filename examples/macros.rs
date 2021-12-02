@@ -28,7 +28,6 @@ fn main() -> anyhow::Result<()> {
                 |(mut context)| {
                     if let Some(arg) = context.args().first() {
                         let value = Value::Integer(arg.parse()?);
-                        drop(arg);
                         context.trim_top();
                         Ok((value, context))
                     } else {

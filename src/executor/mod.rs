@@ -4,9 +4,10 @@ use crate::executor::context::CommandContext;
 pub mod context;
 pub mod macros;
 pub mod command;
+pub mod builder;
 
 pub trait CommandChildContainer<T> {
-    fn child(&mut self, identifier: String, command: command::Command<T>) -> anyhow::Result<()>;
+    fn child<S: Into<String>>(&mut self, identifier: S, command: command::Command<T>) -> anyhow::Result<()>;
 
     fn execute_context(&self, context: context::CommandContext<T>) -> anyhow::Result<Option<anyhow::Result<()>>>;
 }
@@ -23,12 +24,12 @@ impl<T> Executor<T> {
 }
 
 impl<T> CommandChildContainer<T> for Executor<T> {
-    fn child(&mut self, identifier: String, command: Command<T>) -> anyhow::Result<()> {
+    fn child<S: Into<String>>(&mut self, identifier: S, command: Command<T>) -> anyhow::Result<()> {
         match command {
             Command::Natural(_) => {
                 match &mut self.next {
                     Next::LiteralMap(map) => {
-                        map.insert(identifier, command);
+                        map.insert(identifier.into(), command);
                     }
                     _ => unreachable!(),
                 }
